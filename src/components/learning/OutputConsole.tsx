@@ -8,9 +8,12 @@ interface OutputConsoleProps {
 }
 
 export default function OutputConsole({ output, error, running }: OutputConsoleProps) {
+  const lineCount = output.length + (error ? 1 : 0);
+  const contentMinHeight = output.length === 0 && !error && !running ? 120 : undefined;
+
   return (
-    <div className="rounded-xl overflow-hidden border border-gray-700/50 shadow-lg h-full flex flex-col">
-      <div className="flex items-center gap-2 px-3 py-2 bg-gray-900 border-b border-gray-700/50">
+    <div className="rounded-xl overflow-hidden border border-gray-700/50 shadow-lg flex flex-col bg-gray-950">
+      <div className="flex items-center gap-2 px-3 py-2 bg-gray-900 border-b border-gray-700/50 shrink-0">
         <Terminal size={14} className="text-green-400" />
         <span className="text-xs text-gray-400 font-mono">Output</span>
         {running && (
@@ -25,7 +28,10 @@ export default function OutputConsole({ output, error, running }: OutputConsoleP
         )}
       </div>
 
-      <div className="flex-1 bg-gray-950 p-4 font-mono text-sm overflow-auto min-h-[160px] max-h-[320px]">
+      <div
+        className="bg-gray-950 p-4 font-mono text-sm overflow-auto"
+        style={{ minHeight: contentMinHeight, maxHeight: lineCount > 8 ? 320 : undefined }}
+      >
         <AnimatePresence>
           {output.length === 0 && !error && !running && (
             <motion.div

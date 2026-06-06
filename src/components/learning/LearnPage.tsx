@@ -35,6 +35,7 @@ export default function LearnPage({ startDay }: LearnPageProps) {
 
     return (
       <TopicPage
+        key={lesson.id}
         lesson={lesson}
         lessonIndex={selectedLessonIndex}
         totalLessons={day.lessons.length}
