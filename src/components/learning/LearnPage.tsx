@@ -55,8 +55,22 @@ export default function LearnPage({ startDay }: LearnPageProps) {
   }
 
   return (
-    <div className="min-h-screen pt-20 pb-12 px-4">
-      <div className="max-w-4xl mx-auto">
+    <div className={`min-h-screen pt-20 pb-12 px-4 relative overflow-hidden`} style={{ background: `linear-gradient(135deg, ${colors.bg === 'bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50' ? 'rgba(245,158,11,0.05)' : ''})` }}>
+      {/* Floating gradient orbs - subtle animations */}
+      <motion.div
+        className="absolute top-1/4 left-1/4 w-96 h-96 rounded-full blur-3xl opacity-10 pointer-events-none"
+        style={{ background: 'radial-gradient(circle, #f59e0b, transparent)' }}
+        animate={{ scale: [1, 1.15, 1], x: [0, 20, 0], y: [0, -15, 0] }}
+        transition={{ duration: 12, repeat: Infinity, ease: 'easeInOut' }}
+      />
+      <motion.div
+        className="absolute bottom-1/3 right-1/4 w-80 h-80 rounded-full blur-3xl opacity-10 pointer-events-none"
+        style={{ background: 'radial-gradient(circle, #3b82f6, transparent)' }}
+        animate={{ scale: [1, 1.2, 1], x: [0, -25, 0], y: [0, 20, 0] }}
+        transition={{ duration: 14, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
+      />
+
+      <div className="max-w-4xl mx-auto relative z-10">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
           <h1 className={`text-3xl font-extrabold ${colors.text}`}>Learning Path</h1>
           <p className={`text-base ${colors.muted} mt-1`}>5 days. Real skills. Game-like progression.</p>
