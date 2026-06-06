@@ -1,32 +1,71 @@
 import { useState, useCallback } from 'react';
+import Editor from '@monaco-editor/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../hooks/useTheme';
 import { useProgress } from '../../hooks/useProgress';
-import CodeEditor from '../learning/CodeEditor';
 import { challenges, Challenge } from '../../data/problems';
-import { Play, RotateCcw, Lightbulb, CheckCircle, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
+import {
+  Play,
+  RotateCcw,
+  Lightbulb,
+  CheckCircle,
+  ChevronRight,
+  PanelLeftClose,
+  Trash2,
+  Terminal,
+  AlertTriangle,
+  Code2,
+} from 'lucide-react';
 import confetti from 'canvas-confetti';
+
+function formatConsoleArgs(args: unknown[]): string {
+  return args
+    .map(a => {
+      if (typeof a === 'object' && a !== null) {
+        try {
+          return JSON.stringify(a);
+        } catch {
+          return String(a);
+        }
+      }
+      return String(a);
+    })
+    .join(' ');
+}
 
 function runTestCase(code: string, testInput: string): string {
   try {
-    const fullCode = code + `\ntry { let __result = ${testInput}; console.log(String(__result)); } catch(e) { console.log("ERROR: " + e.message); }`;
+    const fullCode =
+      code +
+      `\ntry { let __result = ${testInput}; console.log(String(__result)); } catch(e) { console.log("ERROR: " + e.message); }`;
     const output: string[] = [];
     const fn = new Function('console', fullCode);
-    fn({ log: (...args: unknown[]) => output.push(args.map(String).join(' ')), warn: () => {}, error: () => {}, info: () => {} });
+    fn({
+      log: (...args: unknown[]) => output.push(args.map(String).join(' ')),
+      warn: () => {},
+      error: () => {},
+      info: () => {},
+    });
     return output.join('\n').trim();
   } catch (e) {
     return 'ERROR: ' + (e instanceof Error ? e.message : String(e));
   }
 }
 
-function runUserCode(code: string): { output: string[]; error: string | null } {
-  const output: string[] = [];
+function runUserCode(code: string): { logs: string[]; errors: string[]; runtimeError: string | null } {
+  const logs: string[] = [];
+  const errors: string[] = [];
   try {
     const fn = new Function('console', code);
-    fn({ log: (...args: unknown[]) => output.push(args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')), warn: (...args: unknown[]) => output.push(args.map(String).join(' ')), error: (...args: unknown[]) => output.push(args.map(String).join(' ')), info: (...args: unknown[]) => output.push(args.map(String).join(' ')) });
-    return { output, error: null };
+    fn({
+      log: (...args: unknown[]) => logs.push(formatConsoleArgs(args)),
+      warn: (...args: unknown[]) => logs.push(formatConsoleArgs(args)),
+      info: (...args: unknown[]) => logs.push(formatConsoleArgs(args)),
+      error: (...args: unknown[]) => errors.push(formatConsoleArgs(args)),
+    });
+    return { logs, errors, runtimeError: null };
   } catch (e) {
-    return { output, error: e instanceof Error ? e.message : String(e) };
+    return { logs, errors, runtimeError: e instanceof Error ? e.message : String(e) };
   }
 }
 
@@ -42,57 +81,143 @@ const DIFF_COLORS_DARK: Record<string, string> = {
   hard: 'bg-red-900/40 text-red-400 border-red-800',
 };
 
+function BackgroundOrbs({ isDark }: { isDark: boolean }) {
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden">
+      <motion.div
+        className="absolute -top-24 left-1/4 w-80 h-80 rounded-full blur-3xl"
+        style={{
+          background: isDark
+            ? 'radial-gradient(circle, rgba(99,102,241,0.18), transparent)'
+            : 'radial-gradient(circle, rgba(245,158,11,0.22), transparent)',
+        }}
+        animate={{ scale: [1, 1.15, 1], x: [0, 20, 0] }}
+        transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut' }}
+      />
+      <motion.div
+        className="absolute bottom-0 right-1/4 w-72 h-72 rounded-full blur-3xl"
+        style={{
+          background: isDark
+            ? 'radial-gradient(circle, rgba(139,92,246,0.14), transparent)'
+            : 'radial-gradient(circle, rgba(59,130,246,0.18), transparent)',
+        }}
+        animate={{ scale: [1, 1.2, 1], x: [0, -15, 0] }}
+        transition={{ duration: 11, repeat: Infinity, ease: 'easeInOut', delay: 1.5 }}
+      />
+    </div>
+  );
+}
+
+interface PracticeEditorProps {
+  value: string;
+  onChange: (value: string) => void;
+}
+
+function PracticeEditor({ value, onChange }: PracticeEditorProps) {
+  return (
+    <div className="h-full min-h-0 flex flex-col rounded-xl overflow-hidden bg-[#1e1e1e] border border-gray-700/50 shadow-inner">
+      <div className="shrink-0 flex items-center gap-2 px-4 py-2 bg-[#252526] border-b border-[#333]">
+        <div className="flex items-center gap-1.5">
+          <div className="w-2.5 h-2.5 rounded-full bg-red-500/80" />
+          <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/80" />
+          <div className="w-2.5 h-2.5 rounded-full bg-green-500/80" />
+        </div>
+        <span className="ml-1 text-[11px] text-gray-500 font-mono">script.js</span>
+      </div>
+      <div className="flex-1 min-h-0">
+        <Editor
+          height="100%"
+          defaultLanguage="javascript"
+          value={value}
+          onChange={val => onChange(val || '')}
+          theme="vs-dark"
+          options={{
+            fontSize: 15,
+            fontFamily: '"Fira Code", "Cascadia Code", monospace',
+            fontLigatures: true,
+            minimap: { enabled: false },
+            lineNumbers: 'on',
+            scrollBeyondLastLine: false,
+            wordWrap: 'on',
+            padding: { top: 12, bottom: 12 },
+            suggestOnTriggerCharacters: true,
+            quickSuggestions: true,
+            tabSize: 2,
+            automaticLayout: true,
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
 interface ChallengeListProps {
   onSelect: (c: Challenge) => void;
   selected: Challenge | null;
   completedChallenges: string[];
-  isCollapsed: boolean;
-  onCollapse: (value: boolean) => void;
+  onCollapse: () => void;
 }
 
-function ChallengeList({ onSelect, selected, completedChallenges, isCollapsed, onCollapse }: ChallengeListProps) {
+function ChallengeToggle({ onOpen }: { onOpen: () => void }) {
+  const { isDark } = useTheme();
+
+  return (
+    <button
+      onClick={onOpen}
+      className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold shadow-sm transition-all hover:scale-[1.02] ${
+        isDark
+          ? 'bg-white/10 hover:bg-white/15 text-white border border-white/15'
+          : 'bg-white/90 hover:bg-white text-gray-800 border border-white/60'
+      }`}
+      title="Show challenges"
+    >
+      <ChevronRight size={14} />
+      Challenges
+    </button>
+  );
+}
+
+function ChallengeList({ onSelect, selected, completedChallenges, onCollapse }: ChallengeListProps) {
   const { colors, isDark } = useTheme();
   const [filter, setFilter] = useState<'all' | 'easy' | 'medium' | 'hard'>('all');
 
   const filtered = filter === 'all' ? challenges : challenges.filter(c => c.difficulty === filter);
 
-  if (isCollapsed) {
-    return (
-      <motion.button
-        onClick={() => onCollapse(false)}
-        className={`fixed top-20 left-4 z-30 rounded-lg shadow-lg ${isDark ? 'bg-white/10 hover:bg-white/20 text-white border border-white/30' : 'bg-white shadow-2xl hover:shadow-xl border'} p-2.5 transition-all hover:scale-110`}
-        title="Show challenge list"
-      >
-        <ChevronRight size={20} />
-      </motion.button>
-    );
-  }
-
   return (
-    <motion.div
-      initial={{ opacity: 0, x: -20 }}
+    <motion.aside
+      initial={{ opacity: 0, x: -12 }}
       animate={{ opacity: 1, x: 0 }}
-      exit={{ opacity: 0, x: -20 }}
-      className={`absolute left-0 top-0 bottom-0 z-40 w-80 rounded-r-2xl border-r ${colors.border} flex flex-col overflow-hidden backdrop-blur-md ${isDark ? 'bg-black/40' : 'bg-white/60'}`}
+      className={`absolute left-0 top-0 bottom-0 z-40 w-64 flex flex-col rounded-l-2xl border-r ${colors.border} shadow-2xl backdrop-blur-md ${
+        isDark ? 'bg-slate-900/90' : 'bg-white/95'
+      }`}
     >
-      <div className={`p-4 border-b ${colors.border} flex items-center justify-between`}>
-        <span className={`text-sm font-semibold ${colors.text}`}>Challenges</span>
+      <div className={`shrink-0 px-4 py-3 border-b ${colors.border} flex items-center justify-between gap-2`}>
+        <span className={`text-sm font-bold ${colors.text}`}>Challenges</span>
         <button
-          onClick={() => onCollapse(true)}
-          className={`p-1.5 rounded-lg hover:scale-110 transition-all ${isDark ? 'hover:bg-white/10' : 'hover:bg-gray-200'}`}
-          title="Hide list"
+          onClick={onCollapse}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            isDark
+              ? 'bg-white/10 hover:bg-white/15 text-white border border-white/15'
+              : 'bg-gray-100 hover:bg-gray-200 text-gray-800 border border-gray-200'
+          }`}
+          title="Close challenge list"
         >
-          <ChevronLeft size={16} />
+          <PanelLeftClose size={14} />
+          Close
         </button>
       </div>
 
-      <div className={`p-3 border-b ${colors.border}`}>
+      <div className={`shrink-0 px-4 py-3 border-b ${colors.border}`}>
         <div className="flex gap-1 flex-wrap">
           {(['all', 'easy', 'medium', 'hard'] as const).map(d => (
             <button
               key={d}
               onClick={() => setFilter(d)}
-              className={`px-2 py-1 rounded-md text-xs font-medium capitalize transition-all ${filter === d ? `bg-gradient-to-r ${colors.accent} text-white` : `${colors.muted} ${isDark ? 'hover:bg-white/10' : 'hover:bg-gray-100'}`}`}
+              className={`px-2.5 py-1 rounded-lg text-xs font-medium capitalize transition-all ${
+                filter === d
+                  ? `bg-gradient-to-r ${colors.accent} text-white shadow-sm`
+                  : `${colors.muted} ${isDark ? 'hover:bg-white/10' : 'hover:bg-gray-100'}`
+              }`}
             >
               {d}
             </button>
@@ -100,38 +225,53 @@ function ChallengeList({ onSelect, selected, completedChallenges, isCollapsed, o
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 min-h-0 overflow-y-auto">
         {filtered.map(c => (
           <button
             key={c.id}
             onClick={() => {
               onSelect(c);
-              onCollapse(true);
+              onCollapse();
             }}
-            className={`w-full text-left p-4 border-b ${colors.border} transition-all ${
+            className={`w-full text-left px-4 py-3 border-b ${colors.border} transition-colors ${
               selected?.id === c.id
-                ? `${isDark ? 'bg-white/15' : 'bg-blue-50'}`
-                : `${isDark ? 'hover:bg-white/5' : 'hover:bg-gray-50'}`
+                ? isDark
+                  ? 'bg-white/10'
+                  : 'bg-blue-50/80'
+                : isDark
+                  ? 'hover:bg-white/5'
+                  : 'hover:bg-gray-50'
             }`}
           >
-            <div className="flex items-center justify-between mb-1">
-              <span className={`text-sm font-medium ${colors.text} flex items-center gap-1.5`}>
-                {completedChallenges.includes(c.id) && <CheckCircle size={12} className="text-green-500" />}
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <span className={`text-xs font-semibold ${colors.text} flex items-center gap-1 truncate`}>
+                {completedChallenges.includes(c.id) && <CheckCircle size={11} className="text-green-500 shrink-0" />}
                 {c.title}
               </span>
-              <span className={`text-xs px-1.5 py-0.5 rounded border ${isDark ? DIFF_COLORS_DARK[c.difficulty] : DIFF_COLORS[c.difficulty]} capitalize`}>
+              <span
+                className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded-md border capitalize ${
+                  isDark ? DIFF_COLORS_DARK[c.difficulty] : DIFF_COLORS[c.difficulty]
+                }`}
+              >
                 {c.difficulty}
               </span>
             </div>
             <div className="flex gap-1 flex-wrap">
               {c.tags.slice(0, 2).map(tag => (
-                <span key={tag} className={`text-xs px-1.5 py-0.5 rounded ${isDark ? 'bg-white/10 text-slate-400' : 'bg-gray-100 text-gray-500'}`}>{tag}</span>
+                <span
+                  key={tag}
+                  className={`text-[10px] px-1.5 py-0.5 rounded-md ${
+                    isDark ? 'bg-white/10 text-slate-400' : 'bg-gray-100 text-gray-500'
+                  }`}
+                >
+                  {tag}
+                </span>
               ))}
             </div>
           </button>
         ))}
       </div>
-    </motion.div>
+    </motion.aside>
   );
 }
 
@@ -140,42 +280,60 @@ export default function PracticeArena() {
   const { progress, completeChallenge } = useProgress();
   const [selected, setSelected] = useState<Challenge | null>(challenges[0]);
   const [code, setCode] = useState(challenges[0].starterCode);
-  const [output, setOutput] = useState<string[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [logs, setLogs] = useState<string[]>([]);
+  const [stderr, setStderr] = useState<string[]>([]);
+  const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
-  const [testResults, setTestResults] = useState<{ passed: boolean; expected: string; got: string; hidden?: boolean }[]>([]);
+  const [testResults, setTestResults] = useState<
+    { passed: boolean; expected: string; got: string; hidden?: boolean }[]
+  >([]);
   const [showHint, setShowHint] = useState(false);
   const [hintIndex, setHintIndex] = useState(0);
   const [allPassed, setAllPassed] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
-  const [outputTab, setOutputTab] = useState<'question' | 'output' | 'tests'>('question');
+  const [activeTab, setActiveTab] = useState<'question' | 'output'>('question');
+
+  const workspaceSurface = isDark
+    ? 'bg-white/[0.04] border-white/10 backdrop-blur-md'
+    : `${colors.card} border-white/60 backdrop-blur-sm`;
+  const panelSurface = isDark
+    ? 'bg-white/[0.03] border-white/10'
+    : 'bg-white/60 border-white/50';
+
+  const clearConsole = () => {
+    setLogs([]);
+    setStderr([]);
+    setRuntimeError(null);
+  };
 
   const selectChallenge = (c: Challenge) => {
     setSelected(c);
     setCode(c.starterCode);
-    setOutput([]);
-    setError(null);
+    clearConsole();
     setTestResults([]);
     setShowHint(false);
     setHintIndex(0);
     setAllPassed(false);
-    setOutputTab('question');
+    setActiveTab('question');
   };
 
   const handleRun = useCallback(() => {
     if (!selected) return;
     setRunning(true);
+    setActiveTab('output');
     setTimeout(() => {
-      const { output: out, error: err } = runUserCode(code);
-      setOutput(out);
-      setError(err);
+      const result = runUserCode(code);
+      setLogs(result.logs);
+      setStderr(result.errors);
+      setRuntimeError(result.runtimeError);
       setRunning(false);
-    }, 200);
+    }, 150);
   }, [code, selected]);
 
   const handleSubmit = useCallback(() => {
     if (!selected) return;
     setRunning(true);
+    setActiveTab('output');
     setTimeout(() => {
       const results = selected.testCases.map(tc => {
         const got = runTestCase(code, tc.input);
@@ -185,260 +343,417 @@ export default function PracticeArena() {
       setRunning(false);
       const passed = results.every(r => r.passed);
       setAllPassed(passed);
-      setOutputTab('tests');
       if (passed && !progress.completedChallenges.includes(selected.id)) {
         completeChallenge(selected.id, selected.xpReward);
         confetti({ particleCount: 120, spread: 70, origin: { y: 0.5 } });
       }
-    }, 300);
+    }, 200);
   }, [code, selected, progress, completeChallenge]);
 
+  const handleReset = () => {
+    if (!selected) return;
+    setCode(selected.starterCode);
+    clearConsole();
+    setTestResults([]);
+    setAllPassed(false);
+    setShowHint(false);
+  };
+
+  const hasConsoleOutput = logs.length > 0 || stderr.length > 0 || runtimeError !== null;
+
   return (
-    <div className={`min-h-screen pt-20 pb-8 relative overflow-hidden ${colors.bg}`}>
-      {/* Challenge List Sidebar */}
-      <ChallengeList
-        onSelect={selectChallenge}
-        selected={selected}
-        completedChallenges={progress.completedChallenges}
-        isCollapsed={sidebarCollapsed}
-        onCollapse={setSidebarCollapsed}
-      />
+    <div className={`min-h-screen pt-20 pb-8 px-4 sm:px-6 relative overflow-hidden ${colors.bg}`}>
+      <BackgroundOrbs isDark={isDark} />
 
-      {/* Main IDE Layout */}
-      <div className={`h-[calc(100vh-80px)] flex overflow-hidden relative ${sidebarCollapsed ? '' : 'pl-80'}`}>
-        {/* Left Column: Editor (65%) */}
-        <div className="flex flex-col flex-[0_0_65%] overflow-hidden">
-          {selected ? (
-            <>
-              {/* Editor */}
-              <div className="flex-1 min-h-0 flex flex-col">
-                <div className={`flex-1 min-h-0 ${isDark ? 'border-r border-white/10' : 'border-r border-gray-200'}`}>
-                  <CodeEditor value={code} onChange={setCode} height="100%" />
+      <div className="relative z-10 max-w-6xl mx-auto w-full sm:w-[92%] lg:w-[88%]">
+        {/* Page intro */}
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="text-center mb-5 sm:mb-6"
+        >
+          <span
+            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border mb-3 ${colors.badgeBg} ${colors.badgeText} ${colors.badgeBorder}`}
+          >
+            <Code2 size={12} />
+            Practice Arena
+          </span>
+          <h1 className={`text-2xl sm:text-3xl font-extrabold ${colors.text}`}>
+            Learn by{' '}
+            <span className={`bg-gradient-to-r ${colors.accent} bg-clip-text text-transparent`}>doing</span>
+          </h1>
+          <p className={`text-sm mt-1.5 ${colors.muted}`}>Write code, run it, pass the tests — earn XP along the way.</p>
+        </motion.div>
+
+        {/* Floating workspace card */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.55, delay: 0.08 }}
+          className={`relative rounded-2xl border shadow-xl overflow-hidden ${workspaceSurface}`}
+        >
+          {/* Workspace toolbar */}
+          <div
+            className={`flex items-center justify-between gap-3 px-4 sm:px-5 py-3 border-b ${colors.border} ${
+              isDark ? 'bg-white/[0.02]' : 'bg-white/40'
+            }`}
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              {sidebarCollapsed && <ChallengeToggle onOpen={() => setSidebarCollapsed(false)} />}
+              {selected && (
+                <div className="min-w-0 hidden sm:block">
+                  <p className={`text-sm font-bold truncate ${colors.text}`}>{selected.title}</p>
+                  <p className={`text-[11px] capitalize ${colors.muted}`}>{selected.difficulty} challenge</p>
                 </div>
-
-                {/* Hint Display */}
-                <AnimatePresence>
-                  {showHint && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}
-                      className={`px-3 py-2 text-xs ${isDark ? 'bg-yellow-900/20 text-yellow-300 border-t border-yellow-700/30' : 'bg-yellow-50 text-yellow-800 border-t border-yellow-200'} font-mono`}
-                    >
-                      💡 {selected.hints[hintIndex % selected.hints.length]}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
-                {/* Action Buttons */}
-                <div className={`flex items-center gap-2 p-2 border-t ${isDark ? 'bg-white/5 border-white/10' : 'bg-gray-50 border-gray-200'}`}>
-                  <button
-                    onClick={handleRun}
-                    disabled={running}
-                    className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded text-xs font-bold border ${colors.border} ${colors.text} hover:bg-opacity-80 transition-all disabled:opacity-50`}
-                  >
-                    <Play size={12} /> Run
-                  </button>
-                  <button
-                    onClick={handleSubmit}
-                    disabled={running}
-                    className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded text-xs font-bold text-white bg-gradient-to-r ${colors.accent} hover:shadow-md transition-all disabled:opacity-50`}
-                  >
-                    Submit
-                  </button>
-                  <button
-                    onClick={() => { setCode(selected.starterCode); setOutput([]); setError(null); setTestResults([]); setAllPassed(false); }}
-                    className={`flex items-center justify-center gap-1 px-3 py-2 rounded text-xs font-medium ${colors.muted} border ${colors.border} hover:bg-opacity-80 transition-all`}
-                    title="Reset to starter code"
-                  >
-                    <RotateCcw size={12} />
-                  </button>
-                  <button
-                    onClick={() => { setShowHint(!showHint); if (!showHint && hintIndex < selected.hints.length - 1) setHintIndex(prev => prev + 1); }}
-                    className={`flex items-center justify-center gap-1 px-3 py-2 rounded text-xs font-medium ${isDark ? 'bg-yellow-900/30 text-yellow-400 border border-yellow-700/30' : 'bg-yellow-50 text-yellow-700 border border-yellow-200'} hover:bg-opacity-80 transition-all`}
-                    title="Show hint"
-                  >
-                    <Lightbulb size={12} />
-                  </button>
-                </div>
-              </div>
-            </>
-          ) : (
-            <div className={`flex items-center justify-center h-full ${isDark ? 'bg-white/5' : 'bg-gray-50'}`}>
-              <p className={`text-sm ${colors.muted}`}>Select a challenge to start coding</p>
+              )}
             </div>
-          )}
-        </div>
+            {selected && (
+              <span
+                className={`shrink-0 text-xs font-bold px-2.5 py-1 rounded-lg ${
+                  isDark ? 'bg-yellow-900/30 text-yellow-300' : 'bg-yellow-50 text-yellow-700 border border-yellow-200'
+                }`}
+              >
+                +{selected.xpReward} XP
+              </span>
+            )}
+          </div>
 
-        {/* Right Column: Question/Output Tabs (35%) */}
-        <div className="flex-[0_0_35%] flex flex-col overflow-hidden">
-          {selected ? (
-            <>
-              {/* Tab Headers */}
-              <div className={`flex border-b ${colors.border}`}>
-                <button
-                  onClick={() => setOutputTab('question')}
-                  className={`flex-1 px-3 py-2.5 text-xs font-semibold transition-all ${
-                    outputTab === 'question'
-                      ? `${colors.text} border-b-2 ${isDark ? 'border-white/50' : 'border-gray-900'}`
-                      : `${colors.muted}`
-                  }`}
-                >
-                  Question
-                </button>
-                <button
-                  onClick={() => setOutputTab('output')}
-                  className={`flex-1 px-3 py-2.5 text-xs font-semibold transition-all ${
-                    outputTab === 'output'
-                      ? `${colors.text} border-b-2 ${isDark ? 'border-white/50' : 'border-gray-900'}`
-                      : `${colors.muted}`
-                  }`}
-                >
-                  Output
-                </button>
-              </div>
+          {/* Workspace body */}
+          <div
+            className={`relative transition-[padding] duration-200 ease-out ${
+              sidebarCollapsed ? 'pl-0' : 'pl-64'
+            }`}
+          >
+            {!sidebarCollapsed && (
+              <ChallengeList
+                onSelect={selectChallenge}
+                selected={selected}
+                completedChallenges={progress.completedChallenges}
+                onCollapse={() => setSidebarCollapsed(true)}
+              />
+            )}
 
-              {/* Tab Content */}
-              <div className="flex-1 overflow-auto">
-                {/* Question Tab */}
-                {outputTab === 'question' && (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className={`p-3 space-y-3 text-xs ${isDark ? 'bg-white/5' : 'bg-white/50'}`}
+            {selected ? (
+              <div className="flex flex-col lg:flex-row gap-4 p-4 sm:p-5 min-h-[calc(100vh-16rem)] max-h-[calc(100vh-16rem)]">
+                {/* Editor column (65%) */}
+                <div className="flex flex-col w-full lg:w-[65%] min-w-0 min-h-0 gap-3">
+                  <div className="flex-1 min-h-[280px] lg:min-h-0">
+                    <PracticeEditor value={code} onChange={setCode} />
+                  </div>
+
+                  <AnimatePresence>
+                    {showHint && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className={`rounded-xl px-4 py-2.5 text-xs font-mono ${
+                          isDark
+                            ? 'bg-yellow-900/20 text-yellow-300 border border-yellow-700/30'
+                            : 'bg-yellow-50 text-yellow-800 border border-yellow-200'
+                        }`}
+                      >
+                        <span className="font-semibold">Hint: </span>
+                        {selected.hints[hintIndex % selected.hints.length]}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  <div
+                    className={`shrink-0 flex flex-wrap items-center gap-2 p-2.5 rounded-xl border ${
+                      isDark ? 'bg-white/[0.03] border-white/10' : 'bg-white/50 border-white/60'
+                    }`}
                   >
-                    {/* Title */}
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className={`px-2 py-0.5 rounded border font-bold capitalize ${isDark ? DIFF_COLORS_DARK[selected.difficulty] : DIFF_COLORS[selected.difficulty]}`}>
-                          {selected.difficulty}
-                        </span>
-                        {progress.completedChallenges.includes(selected.id) && (
-                          <span className="flex items-center gap-0.5 text-green-600 dark:text-green-400">
-                            <CheckCircle size={12} /> Solved
-                          </span>
-                        )}
-                      </div>
-                      <h2 className={`text-sm font-bold mb-0.5 ${colors.text}`}>{selected.title}</h2>
-                      <p className={`text-xs font-semibold uppercase tracking-wide ${colors.muted}`}>Day {selected.day}</p>
-                    </div>
+                    <button
+                      onClick={handleRun}
+                      disabled={running}
+                      className={`flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold border transition-all disabled:opacity-50 hover:scale-[1.02] ${
+                        isDark
+                          ? 'border-white/15 text-white hover:bg-white/10'
+                          : 'border-gray-200 text-gray-800 hover:bg-white shadow-sm'
+                      }`}
+                    >
+                      <Play size={13} />
+                      Run
+                    </button>
+                    <button
+                      onClick={handleSubmit}
+                      disabled={running}
+                      className={`flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white bg-gradient-to-r ${colors.accent} shadow-md hover:shadow-lg hover:scale-[1.02] transition-all disabled:opacity-50`}
+                    >
+                      Submit
+                    </button>
+                    <button
+                      onClick={handleReset}
+                      className={`flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-medium border transition-all hover:scale-[1.02] ${
+                        isDark
+                          ? 'border-white/15 text-gray-300 hover:bg-white/10'
+                          : 'border-gray-200 text-gray-600 hover:bg-white shadow-sm'
+                      }`}
+                    >
+                      <RotateCcw size={13} />
+                      Reset
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowHint(!showHint);
+                        if (!showHint && hintIndex < selected.hints.length - 1) {
+                          setHintIndex(prev => prev + 1);
+                        }
+                      }}
+                      className={`flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-medium border transition-all hover:scale-[1.02] ${
+                        isDark
+                          ? 'bg-yellow-900/25 text-yellow-400 border-yellow-700/30 hover:bg-yellow-900/40'
+                          : 'bg-yellow-50 text-yellow-700 border-yellow-200 hover:bg-yellow-100'
+                      }`}
+                    >
+                      <Lightbulb size={13} />
+                      Hint
+                    </button>
+                    {running && (
+                      <span className={`ml-auto text-[11px] ${colors.muted} animate-pulse`}>Running…</span>
+                    )}
+                  </div>
+                </div>
 
-                    {/* Scenario */}
-                    <div>
-                      <p className={`text-xs font-bold uppercase tracking-wide ${colors.muted} mb-1`}>Scenario</p>
-                      <p className={`italic px-2 py-1.5 rounded ${isDark ? 'bg-amber-900/20 border border-amber-700/30 text-amber-200' : 'bg-amber-50 border border-amber-200 text-amber-900'} text-xs`}>
-                        {selected.scenario}
-                      </p>
-                    </div>
-
-                    {/* Problem */}
-                    <div>
-                      <p className={`text-xs font-bold uppercase tracking-wide ${colors.muted} mb-1`}>Problem</p>
-                      <p className={`leading-relaxed ${colors.text} text-xs`}>{selected.description}</p>
-                    </div>
-
-                    {/* Tags */}
-                    <div>
-                      <p className={`text-xs font-bold uppercase tracking-wide ${colors.muted} mb-1`}>Tags</p>
-                      <div className="flex flex-wrap gap-1">
-                        {selected.tags.map(tag => (
-                          <span key={tag} className={`text-xs px-2 py-0.5 rounded ${isDark ? 'bg-white/10 text-slate-300' : 'bg-gray-100 text-gray-700'}`}>
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Reward */}
-                    <div>
-                      <p className={`text-xs font-bold uppercase tracking-wide ${colors.muted} mb-1`}>Reward</p>
-                      <div className={`text-xs font-bold px-2 py-1 rounded inline-flex items-center gap-1 ${isDark ? 'bg-yellow-900/30 text-yellow-300' : 'bg-yellow-50 text-yellow-700 border border-yellow-200'}`}>
-                        +{selected.xpReward} XP
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-
-                {/* Output Tab */}
-                {outputTab === 'output' && (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className={`h-full flex flex-col ${isDark ? 'bg-white/5' : 'bg-white/50'}`}
+                {/* Question / Output panel (35%) */}
+                <div className="flex flex-col w-full lg:w-[35%] min-w-0 min-h-[240px] lg:min-h-0">
+                  <div
+                    className={`flex flex-col flex-1 min-h-0 rounded-2xl border shadow-sm overflow-hidden ${panelSurface}`}
                   >
-                    {/* Output Content */}
-                    <div className="flex-1 overflow-auto">
-                      {/* Console Output */}
-                      {(output.length > 0 || error) && (
-                        <div className="p-2 text-xs font-mono space-y-1 border-b border-current border-opacity-20">
-                          {error && (
-                            <div className="text-red-500">
-                              ❌ {error}
+                    {/* Tab pills */}
+                    <div className={`shrink-0 flex gap-1.5 p-2.5 border-b ${colors.border}`}>
+                      {(['question', 'output'] as const).map(tab => (
+                        <button
+                          key={tab}
+                          onClick={() => setActiveTab(tab)}
+                          className={`flex-1 px-3 py-2 rounded-xl text-xs font-semibold capitalize transition-all ${
+                            activeTab === tab
+                              ? `bg-gradient-to-r ${colors.accent} text-white shadow-sm`
+                              : `${colors.muted} ${isDark ? 'hover:bg-white/10' : 'hover:bg-white/80'}`
+                          }`}
+                        >
+                          {tab}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="flex-1 min-h-0 overflow-hidden p-2.5">
+                      {activeTab === 'question' && (
+                        <motion.div
+                          key="question"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          className={`h-full overflow-y-auto rounded-xl p-4 space-y-4 text-xs ${
+                            isDark ? 'bg-white/[0.02] border border-white/5' : 'bg-white/70 border border-white/60'
+                          }`}
+                        >
+                          <div>
+                            <div className="flex items-center gap-2 mb-2">
+                              <span
+                                className={`px-2.5 py-0.5 rounded-lg border font-bold capitalize ${
+                                  isDark ? DIFF_COLORS_DARK[selected.difficulty] : DIFF_COLORS[selected.difficulty]
+                                }`}
+                              >
+                                {selected.difficulty}
+                              </span>
+                              {progress.completedChallenges.includes(selected.id) && (
+                                <span className="flex items-center gap-1 text-green-500 text-[11px] font-semibold">
+                                  <CheckCircle size={12} />
+                                  Solved
+                                </span>
+                              )}
                             </div>
-                          )}
-                          {output.map((line, i) => (
-                            <div key={i} className={`whitespace-pre-wrap break-words ${colors.text}`}>
-                              {line}
+                            <h2 className={`text-base font-bold leading-snug ${colors.text}`}>{selected.title}</h2>
+                          </div>
+
+                          <div>
+                            <p className={`text-[10px] font-bold uppercase tracking-wider ${colors.muted} mb-1.5`}>
+                              Scenario
+                            </p>
+                            <p
+                              className={`italic px-3 py-2.5 rounded-xl leading-relaxed ${
+                                isDark
+                                  ? 'bg-amber-900/15 border border-amber-700/25 text-amber-200'
+                                  : 'bg-amber-50 border border-amber-200 text-amber-900'
+                              }`}
+                            >
+                              {selected.scenario}
+                            </p>
+                          </div>
+
+                          <div>
+                            <p className={`text-[10px] font-bold uppercase tracking-wider ${colors.muted} mb-1.5`}>
+                              Problem
+                            </p>
+                            <p className={`leading-relaxed ${colors.text}`}>{selected.description}</p>
+                          </div>
+
+                          <div>
+                            <p className={`text-[10px] font-bold uppercase tracking-wider ${colors.muted} mb-1.5`}>
+                              Tags
+                            </p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {selected.tags.map(tag => (
+                                <span
+                                  key={tag}
+                                  className={`text-[10px] px-2.5 py-1 rounded-lg ${
+                                    isDark ? 'bg-white/10 text-slate-300' : 'bg-gray-100 text-gray-700'
+                                  }`}
+                                >
+                                  {tag}
+                                </span>
+                              ))}
                             </div>
-                          ))}
-                        </div>
+                          </div>
+
+                          <div>
+                            <p className={`text-[10px] font-bold uppercase tracking-wider ${colors.muted} mb-1.5`}>
+                              Reward
+                            </p>
+                            <span
+                              className={`text-xs font-bold px-3 py-1.5 rounded-xl inline-flex ${
+                                isDark
+                                  ? 'bg-yellow-900/25 text-yellow-300 border border-yellow-700/30'
+                                  : 'bg-yellow-50 text-yellow-700 border border-yellow-200'
+                              }`}
+                            >
+                              +{selected.xpReward} XP
+                            </span>
+                          </div>
+                        </motion.div>
                       )}
 
-                      {/* Test Results */}
-                      {testResults.length > 0 && (
-                        <div className="p-2 text-xs space-y-1">
-                          {allPassed && (
-                            <div className="rounded bg-gradient-to-r from-green-500 to-emerald-500 text-white p-2 font-bold text-center mb-1">
-                              ✅ All tests passed! +{selected?.xpReward} XP
-                            </div>
-                          )}
-                          {testResults.map((r, i) => (
-                            <div key={i} className={`flex items-start gap-2 p-1.5 rounded border text-xs ${r.passed ? 'bg-green-500/10 border-green-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
-                              <span className="flex-shrink-0">{r.passed ? '✅' : '❌'}</span>
-                              <div className="flex-1 min-w-0">
-                                {r.hidden ? (
-                                  <span className={colors.muted}>Hidden test {r.passed ? 'passed' : 'failed'}</span>
+                      {activeTab === 'output' && (
+                        <motion.div
+                          key="output"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          className="h-full flex flex-col rounded-xl overflow-hidden border border-gray-700/40 bg-[#141414] shadow-inner"
+                        >
+                          <div className="flex-1 min-h-0 overflow-y-auto font-mono text-xs">
+                            {!hasConsoleOutput && testResults.length === 0 && !running && (
+                              <div className="flex items-center justify-center h-full text-gray-500 px-4">
+                                <p className="text-xs text-center">Click Run to see your output here</p>
+                              </div>
+                            )}
+
+                            {runtimeError && (
+                              <div className="m-2.5 rounded-lg border border-red-900/50 bg-red-950/50 px-3 py-2.5">
+                                <div className="flex items-center gap-1.5 text-red-400 font-semibold mb-1">
+                                  <AlertTriangle size={12} />
+                                  Runtime Error
+                                </div>
+                                <p className="text-red-300 whitespace-pre-wrap break-words">{runtimeError}</p>
+                              </div>
+                            )}
+
+                            {(logs.length > 0 || (running && !runtimeError)) && (
+                              <div className="m-2.5 rounded-lg border border-gray-800 bg-[#1a1a1a] px-3 py-2.5">
+                                <div className="flex items-center gap-1.5 text-green-500/80 font-semibold mb-1.5">
+                                  <Terminal size={12} />
+                                  console.log
+                                </div>
+                                {logs.length === 0 && running ? (
+                                  <p className="text-gray-500 italic">…</p>
                                 ) : (
-                                  <div className="space-y-0.5">
-                                    <div className={colors.text}>Expected: <code className={`font-mono text-xs ${r.passed ? 'text-green-400' : 'text-yellow-400'}`}>{r.expected}</code></div>
-                                    {!r.passed && <div className={colors.text}>Got: <code className="font-mono text-xs text-red-400">{r.got || 'nothing'}</code></div>}
-                                  </div>
+                                  logs.map((line, i) => (
+                                    <p
+                                      key={i}
+                                      className="text-green-400 whitespace-pre-wrap break-words leading-relaxed"
+                                    >
+                                      {line}
+                                    </p>
+                                  ))
                                 )}
                               </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                            )}
 
-                      {/* Empty State */}
-                      {output.length === 0 && !error && testResults.length === 0 && (
-                        <div className={`flex items-center justify-center h-full ${colors.muted}`}>
-                          <p className="text-xs">Click "Run" to see output</p>
-                        </div>
+                            {stderr.length > 0 && (
+                              <div className="m-2.5 rounded-lg border border-gray-800 bg-[#1a1a1a] px-3 py-2.5">
+                                <div className="flex items-center gap-1.5 text-red-400/80 font-semibold mb-1.5">
+                                  <AlertTriangle size={12} />
+                                  console.error
+                                </div>
+                                {stderr.map((line, i) => (
+                                  <p
+                                    key={i}
+                                    className="text-red-400 whitespace-pre-wrap break-words leading-relaxed"
+                                  >
+                                    {line}
+                                  </p>
+                                ))}
+                              </div>
+                            )}
+
+                            {testResults.length > 0 && (
+                              <div className="m-2.5 space-y-1.5">
+                                {allPassed && (
+                                  <div className="rounded-lg bg-gradient-to-r from-green-600 to-emerald-600 text-white px-3 py-2 font-bold text-center text-[11px] shadow-sm">
+                                    All tests passed! +{selected.xpReward} XP
+                                  </div>
+                                )}
+                                {testResults.map((r, i) => (
+                                  <div
+                                    key={i}
+                                    className={`flex items-start gap-2 p-2 rounded-lg border text-[11px] ${
+                                      r.passed
+                                        ? 'bg-green-500/10 border-green-500/30'
+                                        : 'bg-red-500/10 border-red-500/30'
+                                    }`}
+                                  >
+                                    <span className="shrink-0">{r.passed ? '✓' : '✗'}</span>
+                                    <div className="flex-1 min-w-0">
+                                      {r.hidden ? (
+                                        <span className="text-gray-400">
+                                          Hidden test {r.passed ? 'passed' : 'failed'}
+                                        </span>
+                                      ) : (
+                                        <div className="space-y-0.5 text-gray-300">
+                                          <div>
+                                            Expected:{' '}
+                                            <code className={r.passed ? 'text-green-400' : 'text-yellow-400'}>
+                                              {r.expected}
+                                            </code>
+                                          </div>
+                                          {!r.passed && (
+                                            <div>
+                                              Got: <code className="text-red-400">{r.got || 'nothing'}</code>
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="shrink-0 border-t border-gray-800 p-2.5">
+                            <button
+                              onClick={clearConsole}
+                              disabled={!hasConsoleOutput}
+                              className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border border-gray-700 text-gray-400 hover:bg-white/5 transition-all disabled:opacity-40"
+                            >
+                              <Trash2 size={11} />
+                              Clear Console
+                            </button>
+                          </div>
+                        </motion.div>
                       )}
                     </div>
-
-                    {/* Clear Console Button */}
-                    {(output.length > 0 || error) && (
-                      <div className={`border-t ${colors.border} p-1.5`}>
-                        <button
-                          onClick={() => { setOutput([]); setError(null); }}
-                          className={`w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-xs font-medium ${colors.muted} border ${colors.border} hover:bg-opacity-80 transition-all`}
-                        >
-                          <Trash2 size={11} /> Clear
-                        </button>
-                      </div>
-                    )}
-                  </motion.div>
-                )}
+                  </div>
+                </div>
               </div>
-            </>
-          ) : (
-            <div className={`flex items-center justify-center h-full ${isDark ? 'bg-white/5' : 'bg-gray-50'}`}>
-              <p className={`text-sm ${colors.muted}`}>Select a challenge</p>
-            </div>
-          )}
-        </div>
+            ) : (
+              <div className={`flex items-center justify-center py-24 ${colors.muted}`}>
+                <p className="text-sm">Select a challenge to start coding</p>
+              </div>
+            )}
+          </div>
+        </motion.div>
       </div>
     </div>
   );
